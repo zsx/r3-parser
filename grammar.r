@@ -20,10 +20,10 @@ read-hex: function [
     for-each d num [
         case [
             all [d >= #"0" d <= #"9"][
-                ret: ret * 10 + (to integer! d) - 48 ; 48 = to integer! #"0"
+                ret: ret * 16 + (to integer! d) - 48 ; 48 = to integer! #"0"
             ]
             all [d >= #"A" d <= #"F"][
-                ret: ret * 10 + (to integer! d) - 65 + 10; 65 = to integer! #"A"
+                ret: ret * 16 + (to integer! d) - 65 + 10; 65 = to integer! #"A"
             ]
             'else [
                 fail spaced ["Invalid hex digit:" d]
@@ -642,9 +642,29 @@ tag: context [
 
 url: context [
     val: _
-    url-char: charset [letter digit "%/"]
+    s: _
+    c: _
     rule: [
-        copy val [some byte "://" some url-char] (val: to url! val)
+        copy val [
+            word/rule
+            "://"
+            any [
+                [#"%" 2 hex-digit]
+                | #"/"
+                | delimiter break
+                | skip
+            ]
+        ] (
+            ; replace all %xx
+            parse val [
+                while [
+                    change [#"%" copy s [2 hex-digit] (dump s c: to char! read-hex s)] c
+                    | skip
+                ]
+            ]
+
+            val: to url! val
+        )
     ]
 ]
 
@@ -743,6 +763,7 @@ item: context [
         | decimal/rule                  (val: decimal/val)              ;before integer
         | integer/rule [and delimiter | pos: (abort 'invalid-integer)]
                                         (val: integer/val)
+        | url/rule                      (val: url/val)                  ;before set-word
         | set-path/rule                 (val: set-path/val)             ;before path
         | path/rule                     (val: path/val)                 ;before word
         | set-word/rule                 (val: set-word/val)             ;before word

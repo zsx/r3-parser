@@ -49,6 +49,7 @@ for-each f [
     %path.r
     %construct.r
     %file.r
+    %url.r
 ][
     for-each s load/all f [
         assert-scan f s
