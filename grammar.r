@@ -55,15 +55,6 @@ space-char: charset "^@^(01)^(02)^(03)^(04)^(05)^(06)^(07)^(08)^(09)^(0A)^(0B)^(
 non-space: complement space-char
 special-char: charset "@%\:'<>+-~|_.,#$"
 ;word-char: complement charset "@%\,#$:"
-non-special-word-char: charset ["!&*=?" #"A" - #"Z" "^^`" #"a" - #"z" #"~"
-    #"^(80)" - #"^(BF)" ;old control chars and alternate chars
-    #"^(C2)" - #"^(FE)"
-]
-
-special-word-char: charset "+-~|_."
-leading-word-char: union non-special-word-char special-word-char
-word-char: union leading-word-char digit
-
 line-break: [
     [
         "^(0A)^(0D)"
@@ -157,13 +148,19 @@ decimal: context [
     ]
 ]
 
+any-number: context [
+    val: _
+    rule: [
+        decimal/rule (val: decimal/val)
+        | integer/rule (val: integer/val)
+    ]
+]
+
 percent: context [
     val: 0%
 
     rule: [
-        decimal/rule
-        #"%"
-        (val: to percent! decimal/val / 100)
+        any-number/rule #"%" (val: to percent! any-number/val / 100)
     ]
 ]
 
@@ -205,11 +202,7 @@ time: context [
         #":"
         integer/rule (minute: integer/val)
         opt [
-            #":"
-            [
-                integer/rule (sec: integer/val)
-                | decimal/rule (sec: decimal/val)
-            ]
+            #":" any-number/rule (sec: any-number/val)
             opt [
                 [
                      "AM"
@@ -396,14 +389,23 @@ binary: context [
 word: context [
     val: _
     s: _
+
+    regular-word-char: charset ["!&*=?" #"A" - #"Z" #"_" "^`" #"a" - #"z" #"|" #"~"
+        #"^(80)" - #"^(BF)" ;old control chars and alternate chars
+        #"^(C2)" - #"^(FE)"
+    ] ;can appear in anywhere in a word
+
+    num-starter: charset "+-." ;must be followed by a non-digit
     rule: [
         copy s [ 
             [
-                [
-                    leading-word-char
-                    any [leading-word-char | digit]
+                num-starter delimiter ;num-starters can be words by themselves
+                | [
+                    opt num-starter
+                    regular-word-char
+                    any [num-starter | regular-word-char | digit]
                 ]
-                | some #"/" ;all-slash words
+                | some #"/" and delimiter ;all-slash words
             ]
         ] (val: to word! s)
         ;special words starting with #"<", not a tag
@@ -653,6 +655,20 @@ rebol: context [
             | #"|" and delimiter            (append array '|)
             | "'|" and delimiter            (append array to lit-bar! '|)
             | #"_" and delimiter            (append array _)
+            | block/rule                    (append/only array block/val)   ;#"["
+            ;| void/rule                    (append array block/val)         ;#"("
+            | group/rule                    (append/only array group/val)   ;#"("
+            | string/rule                   (append array string/val)       ;#"{"
+            | char/rule                     (append array char/val)         ;"#{" or {#"}
+            | binary/rule                   (append array binary/val)       ;"#{" or "64#{"
+            | issue/rule                    (append array issue/val)        ;#"#"
+            | file/rule                     (append array file/val)         ;#"%"
+            | money/rule                    (append array money/val)        ;#"$"
+            | lit-path/rule                 (append array lit-path/val)     ;#"'"
+            | get-path/rule                 (append array get-path/val)     ;#":"
+            | lit-word/rule                 (append array lit-word/val)     ;#"'"
+            | get-word/rule                 (append array get-word/val)     ;#":"
+
             | pair/rule                     (append array pair/val)
             | time/rule                     (append array time/val)         ;before integer
             | percent/rule                  (append array percent/val)      ;before decimal
@@ -662,25 +678,13 @@ rebol: context [
             | set-path/rule                 (append array set-path/val)     ;before path
             | path/rule                     (append array path/val)         ;before word
             | set-word/rule                 (append array set-word/val)     ;before word
-            | word/rule                     (append array word/val)
-            | block/rule                    (append/only array block/val)   ;#"["
-            ;| void/rule                    (append array block/val)         ;#"("
-            | group/rule                    (append/only array group/val)   ;#"("
-            | string/rule                   (append array string/val)       ;#"{"
-            | char/rule                     (append array char/val)         ;"#{" or {#"}
-            | binary/rule                   (append array binary/val)       ;"#{"
-            | issue/rule                    (append array issue/val)        ;#"#"
-            | file/rule                     (append array file/val)         ;#"%"
-            | money/rule                    (append array money/val)        ;#"$"
-            | lit-path/rule                 (append array lit-path/val)     ;#"'"
-            | get-path/rule                 (append array get-path/val)     ;#":"
-            | lit-word/rule                 (append array lit-word/val)     ;#"'"
-            | get-word/rule                 (append array get-word/val)     ;#":"
+            | word/rule                     (append array word/val)         ;before refinement, because #"/" could be a word
+
             | refinement/rule               (append array get-word/val)     ;#"/"
             | tag/rule                      (append array tag/val)          ;#"<"
             ;| delimiter                                                    ; non-space delimiters must have been consumed
             ;| skip                          ();invalid UTF8 byte?
-            | [and delimiter | pos: (abort 'invalid-word)]
+            | [and [#")" | #"]"] | pos: (abort 'invalid-word)]
         ]
     ]
 ]
@@ -688,15 +692,15 @@ rebol: context [
 scan-source: function [
     source [binary! string!]
 ][
-    debug ["scanning:" mold source]
+    ;debug ["scanning:" mold source]
     pre-parse
 
     ;trace on
     if parse source rebol/rule [
-        print ["block:" mold array]
+        ;print ["block:" mold array]
         return array
     ]
 
-    print ["partial block:" mold array]
+    ;print ["partial block:" mold array]
     fail spaced ["Syntax error at:" pos]
 ]
