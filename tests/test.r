@@ -40,6 +40,7 @@ for-each f [
     %percent.r
     %money.r
     %time.r
+    %date.r
     %word.r
     %array.r
     %string.r

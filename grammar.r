@@ -49,6 +49,7 @@ abort: func [
 digit: charset "0123456789"
 hex-digit: charset "0123456789ABCDEF"
 letter: charset [#"a" - #"z"]
+sign: charset "+-"
 byte: complement charset {}
 lit-prefix: {'}
 space-char: charset "^@^(01)^(02)^(03)^(04)^(05)^(06)^(07)^(08)^(09)^(0A)^(0B)^(0C)^(0D)^(0E)^(0F)^(10)^(11)^(12)^(13)^(14)^(15)^(16)^(17)^(18)^(19)^(1A)^(1B)^(1C)^(1D)^(1E)^(1F)^(20)^(7F)"
@@ -107,7 +108,7 @@ integer: context [
 
     rule: [
         copy s [
-            opt [#"+" | #"-"]
+            opt sign
             unsigned-integer/rule
         ]
         (if error? err: try [val: to integer! s][
@@ -141,7 +142,7 @@ decimal: context [
     s: _
     rule: [
         copy s [
-            opt [#"+" | #"-"]
+            opt sign
             unsigned-decimal/rule
         ]
         (val: to decimal! s)
@@ -167,14 +168,14 @@ percent: context [
 money: context [
     val: $0.00
     s: _
-    sign: _
+    sign-char: _
 
     rule: [
-        opt copy sign [#"+" | #"-"] ;-$2.1, not $-2.1
+        opt copy sign-char sign ;-$2.1, not $-2.1
         #"$"
         copy s unsigned-decimal/rule
         (
-            val: to money! to decimal! either blank? sign [s][join-of sign s]
+            val: to money! to decimal! either blank? sign [s][join-of sign-char s]
         )
     ]
 ]
@@ -240,28 +241,64 @@ date: context [
     month: _
     year: _
     tz: _
+    t: _
+    sep: _
+    sign-char: _
 
     init: does [
         day: _
         month: _
         year: _
+        t: _
         tz: _
     ]
 
+    named-month: [
+        "Jan" opt [#"u" opt [#"a" opt [ #"r" opt #"y"]]]                            (month: 1)
+        | "Feb" opt [#"r" opt [#"u" opt [#"a" opt [ #"r" opt #"y"]]]]               (month: 2)
+        | "Mar" opt [#"c" opt opt #"h"]                                             (month: 3)
+        | "Apr" opt [#"i" opt opt #"l"]                                             (month: 4)
+        | "May"                                                                     (month: 5)
+        | "Jun" opt #"e"                                                            (month: 6)
+        | "Jul" opt #"y"                                                            (month: 7)
+        | "Aug" opt [#"u" opt [#"s" opt #"t"]]                                      (month: 8)
+        | "Sep" opt [#"t" opt [#"e" opt [ #"m" opt [#"b" opt [#"e" opt #"r"]]]]]    (month: 9)
+        | "Oct" opt [#"o" opt [#"b" opt [#"e" opt #"r"]]]                           (month: 10)
+        | "Nov" opt [#"e" opt [ #"m" opt [#"b" opt [#"e" opt #"r"]]]]               (month: 11)
+        | "Dec" opt [#"e" opt [ #"m" opt [#"b" opt [#"e" opt #"r"]]]]               (month: 12)
+    ]
+
     rule: [
+        (init)
         [
             unsigned-integer/rule (day: unsigned-integer/val)
-            #"-"
-            unsigned-integer/rule (month: unsigned-integer/val)
-            #"-"
+            set sep [#"-" | #"/"]
+            [
+                unsigned-integer/rule (month: unsigned-integer/val)
+                | named-month
+            ]
+            sep
             unsigned-integer/rule (year: unsigned-integer/val)
-        ]
-        | [
-            unsigned-integer/rule (day: unsigned-integer/val)
-            #"/"
-            unsigned-integer/rule (month: unsigned-integer/val)
-            #"/"
-            unsigned-integer/rule (year: unsigned-integer/val)
+            opt [
+                #"/"
+                time/rule (t: time/val)
+                opt [
+                    set sign-char sign
+                    time/rule (
+                        either sign-char = #"-" [
+                            tz: negate time/val
+                        ][
+                            tz: time/val
+                        ]
+                    )
+                ]
+            ]
+            (
+                val: reduce [day month year]
+                if t [append val t]
+                if tz [append val tz]
+                val: make date! val
+            )
         ]
     ]
 ]
@@ -693,6 +730,7 @@ item: context [
 
         | pair/rule                     (val: pair/val)
         | time/rule                     (val: time/val)                 ;before integer
+        | date/rule                     (val: date/val)                 ;before integer
         | percent/rule                  (val: percent/val)              ;before decimal
         | decimal/rule                  (val: decimal/val)              ;before integer
         | integer/rule [and delimiter | pos: (abort 'invalid-integer)]
