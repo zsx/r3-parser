@@ -48,6 +48,7 @@ for-each f [
     %refinement.r
     %path.r
     %construct.r
+    %file.r
 ][
     for-each s load/all f [
         assert-scan f s

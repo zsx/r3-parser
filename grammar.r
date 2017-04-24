@@ -572,10 +572,18 @@ lit-path: context [
 file: context [
     val: _
     s: _
+    white-char: charset [#"^(00)" - #"^(20)"]
+    valid-in-quotes: complement charset {:;^"}
+    valid: complement union white-char charset {:;()[]^"}
     rule: [
-        #"%" copy s [
-            string/rule
-            | any [#"/" | [not delimiter]]
+        #"%" [
+            [
+                #"^""
+                copy s [any valid-in-quotes]
+                required-quote
+            ] | [
+                copy s [any valid]
+            ]
         ]
         (val: to file! s)
     ]
