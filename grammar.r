@@ -43,7 +43,7 @@ abort: func [
     print ["Aborting due to" reason "at:" pos]
     print ["source:" head pos]
     err: reason
-    fail select syntax-errors reason
+    fail select* syntax-errors reason else spaced ["Unknown error" reason]
 ]
 
 digit: charset "0123456789"
@@ -271,6 +271,7 @@ string: context [
     nest: 0
     n: _
     s: _
+    non-quote: complement charset {"}
     non-close-paren: complement charset ")"
 
     named-escapes: [
@@ -333,22 +334,32 @@ string: context [
             #"^"" copy val [
                 any [
                     {^^"}
-                    | #"^"" break
                     | line-break (abort 'missing-close-quote)
-                    | skip
+                    | non-quote
                 ]
-            ] pos: (unless #"^"" last [abort 'missing-close-quote])
+            ]["^"" | pos: (abort 'missing-close-quote)]
             | #"^{" copy val [
-                any [
+                some [
                     "^^{"
+                    | "^^}"
+
+                    ;unescaped braces
                     | #"^{" (++ nest)
-                    | #"^}" (-- nest n: either zero? nest [] [break] [_]) n
+                    | #"^}" (-- nest n: either zero? nest [break] [_]) n
+
                     | line-break
                     | skip
                 ]
-            ] pos: (unless #"^}" last [abort 'missing-close-brace])
+            ] pos: (
+                unless #"^}" = last pos [
+                    abort 'missing-close-brace
+                ]
+                unless zero? nest [
+                    abort 'unbalanced-braces
+                ]
+                remove back tail val ;remove the trailing "^}"
+            )
         ](
-            remove back tail val ;remove the trailing {"} or "^}"
             ;process escaping
             parse val [
                 while [
@@ -397,7 +408,7 @@ word: context [
 
     num-starter: charset "+-." ;must be followed by a non-digit
     rule: [
-        copy s [ 
+        copy s [
             [
                 num-starter delimiter ;num-starters can be words by themselves
                 | [
@@ -415,6 +426,7 @@ word: context [
         | "<|" and delimiter (val: to word! "<|")
         | "<-" and delimiter (val: to word! "<-")
         | ">>" and delimiter (val: '>>)
+        | ">=" and delimiter (val: '>=)
 
         ; some special chars can be signle-char words
         ; "@%\:,',$" are exceptions
@@ -460,29 +472,36 @@ issue: context [
 
 refinement: context [
     val: _
-    s: _
     rule: [
         pos: #"/"
         [
-            | some #"/" fail ; all slashes are words
+            some #"/" fail ; all slashes are words
             ;exclude some words that can't be refinement
             | pos: [#"<" | #">"] (abort 'invalid-refinement)
-            ;special refinements
-            | word/rule (val: to refinement word/val)
+            | integer/rule (val: to refinement! integer/val)
+            | word/rule (val: to refinement! word/val)
         ]
     ]
 ]
 
 path: context [
     val: _
-    comp: _
+
     rule: [
-        (val: make path! 1)
+        word/rule (
+            val: make path! 1
+            append/only val word/val
+        )
         some [
+            #"/"
             [
-                word/rule (comp: word/val)
-                | group/rule (comp: group/val)
-            ] #"/"
+                (insert/only stack val) ;this could cause recursive calls to path/rule
+                item/rule (
+                    val: take stack
+                    append/only val item/val
+                )
+                | (take stack) pos: (abort 'invalid-path)
+            ]
         ]
     ]
 ]
@@ -587,10 +606,12 @@ url: context [
 char: context [
     val: _
     rule: [
-        [
-            [ {#"} set val byte required-quote]
-            | [ "#{" set val byte "}" ] ;missing a #"}" might not fail, keep matching binary
-        ] (val: to char! byte)
+        {#} string/rule (
+            unless 1 = length string/val [
+                fail 'invalid-char
+            ]
+            val: first string/val
+        )
     ]
 ]
 
@@ -600,12 +621,18 @@ construct: context [
         #"#"
         block/rule
         (
-            switch/default length val [
+            debug ["block:" mold block/val]
+            switch/default length block/val [
                 2 [
+                    val: bind block/val lib
                     val: make val/1 val/2
                 ]
                 1 [; #[false] #[true] or #[none]
-                    unless find [false true none] val/1 [
+                    val: switch/default first block/val [
+                        true [true]
+                        false [false]
+                        none [_]
+                    ][
                         abort 'mal-construct
                     ]
                 ]
@@ -643,6 +670,45 @@ pre-parse: does [
     array: make block! 1
 ]
 
+item: context [
+    val: _
+    rule: [
+        #"|" and delimiter              (val: '|)
+        | "'|" and delimiter            (val: to lit-bar! '|)
+        | #"_" and delimiter            (val: _)
+        | block/rule                    (val: block/val)                ;    [
+        ;| void/rule                    (val: block/val)                ;    (
+        | group/rule                    (val: group/val)                ;    (
+        | string/rule                   (val: string/val)               ;    {
+        | char/rule                     (val: char/val)                 ;    #{ or #"
+        | binary/rule                   (val: binary/val)               ;    #{ or 64#
+        | construct/rule                (val: construct/val)            ;    #[
+        | issue/rule                    (val: issue/val)                ;    #
+        | file/rule                     (val: file/val)                 ;    %
+        | money/rule                    (val: money/val)                ;    $
+        | lit-path/rule                 (val: lit-path/val)             ;    '
+        | get-path/rule                 (val: get-path/val)             ;    :
+        | lit-word/rule                 (val: lit-word/val)             ;    '
+        | get-word/rule                 (val: get-word/val)             ;    :
+
+        | pair/rule                     (val: pair/val)
+        | time/rule                     (val: time/val)                 ;before integer
+        | percent/rule                  (val: percent/val)              ;before decimal
+        | decimal/rule                  (val: decimal/val)              ;before integer
+        | integer/rule [and delimiter | pos: (abort 'invalid-integer)]
+                                        (val: integer/val)
+        | set-path/rule                 (val: set-path/val)             ;before path
+        | path/rule                     (val: path/val)                 ;before word
+        | set-word/rule                 (val: set-word/val)             ;before word
+        | word/rule                     (val: word/val)                 ;before refinement, because #"/" could be a word
+
+        | refinement/rule               (val: refinement/val)           ;#"/"
+        | tag/rule                      (val: tag/val)                  ;#"<"
+        ;| delimiter                                                    ; non-space delimiters must have been consumed
+        ;| skip                          ();invalid UTF8 byte?
+    ]
+]
+
 rebol: context [
     rule: [
         any [
@@ -652,37 +718,7 @@ rebol: context [
             end
             | space
             | comment/rule
-            | #"|" and delimiter            (append array '|)
-            | "'|" and delimiter            (append array to lit-bar! '|)
-            | #"_" and delimiter            (append array _)
-            | block/rule                    (append/only array block/val)   ;#"["
-            ;| void/rule                    (append array block/val)         ;#"("
-            | group/rule                    (append/only array group/val)   ;#"("
-            | string/rule                   (append array string/val)       ;#"{"
-            | char/rule                     (append array char/val)         ;"#{" or {#"}
-            | binary/rule                   (append array binary/val)       ;"#{" or "64#{"
-            | issue/rule                    (append array issue/val)        ;#"#"
-            | file/rule                     (append array file/val)         ;#"%"
-            | money/rule                    (append array money/val)        ;#"$"
-            | lit-path/rule                 (append array lit-path/val)     ;#"'"
-            | get-path/rule                 (append array get-path/val)     ;#":"
-            | lit-word/rule                 (append array lit-word/val)     ;#"'"
-            | get-word/rule                 (append array get-word/val)     ;#":"
-
-            | pair/rule                     (append array pair/val)
-            | time/rule                     (append array time/val)         ;before integer
-            | percent/rule                  (append array percent/val)      ;before decimal
-            | decimal/rule                  (append array decimal/val)      ;before integer
-            | integer/rule [and delimiter | pos: (abort 'invalid-integer)]
-                                            (append array integer/val)
-            | set-path/rule                 (append array set-path/val)     ;before path
-            | path/rule                     (append array path/val)         ;before word
-            | set-word/rule                 (append array set-word/val)     ;before word
-            | word/rule                     (append array word/val)         ;before refinement, because #"/" could be a word
-
-            | refinement/rule               (append array get-word/val)     ;#"/"
-            | tag/rule                      (append array tag/val)          ;#"<"
-            ;| delimiter                                                    ; non-space delimiters must have been consumed
+            | item/rule         (append/only array item/val)
             ;| skip                          ();invalid UTF8 byte?
             | [and [#")" | #"]"] | pos: (abort 'invalid-word)]
         ]
@@ -692,7 +728,7 @@ rebol: context [
 scan-source: function [
     source [binary! string!]
 ][
-    ;debug ["scanning:" mold source]
+    debug ["scanning:" mold source]
     pre-parse
 
     ;trace on

@@ -1,6 +1,6 @@
 REBOL []
 
-import %grammar.r
+import %../grammar.r
 
 testcases: 0
 pass: 0
@@ -11,17 +11,24 @@ assert-scan: procedure [
     src [string! binary!]
 ][
     ++ testcases
-    either error? try [expected: load/all src][
-        unless error? try [
-            actual: scan-source src
+    either error? expected: try [load/all src][
+        either error? actual: try [
+            scan-source src
         ][
+            ++ pass
+        ][
+            print ["actual:" mold actual]
+            print ["expected:" mold expected]
             append/only xpass reduce [f src actual expected]
         ]
     ][
-        actual: scan-source src
+        actual: try [scan-source src]
         either expected = actual [
             ++ pass
         ][
+            print ["Failure"]
+            print ["actual:" mold actual]
+            print ["expected:" mold expected]
             append/only failure reduce [f src actual expected]
         ]
     ]
@@ -35,6 +42,11 @@ for-each f [
     %time.r
     %word.r
     %array.r
+    %string.r
+    %word.r
+    %refinement.r
+    %path.r
+    %construct.r
 ][
     for-each s load/all f [
         assert-scan f s
