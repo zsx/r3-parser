@@ -50,6 +50,8 @@ for-each f [
     %construct.r
     %file.r
     %url.r
+    %email.r
+    %tuple.r
 ][
     for-each s load/all f [
         assert-scan f s

@@ -9,7 +9,7 @@ debug: :print
 
 err: _
 pos: _
-line-no: _
+line-no: 0
 last-line: _
 
 read-hex: function [
@@ -40,10 +40,10 @@ syntax-errors: [
 abort: func [
     reason [word!]
 ][
-    print ["Aborting due to" reason "at:" pos]
-    print ["source:" head pos]
+    print ["Aborting due to" reason "at:" line-no "x" (index-of pos) - (index-of last-line)]
+    print ["source:" to string! pos]
     err: reason
-    fail select* syntax-errors reason else spaced ["Unknown error" reason]
+    fail (select* syntax-errors reason else spaced ["Unknown error" reason])
 ]
 
 digit: charset "0123456789"
@@ -55,7 +55,7 @@ lit-prefix: {'}
 space-char: charset "^@^(01)^(02)^(03)^(04)^(05)^(06)^(07)^(08)^(09)^(0A)^(0B)^(0C)^(0D)^(0E)^(0F)^(10)^(11)^(12)^(13)^(14)^(15)^(16)^(17)^(18)^(19)^(1A)^(1B)^(1C)^(1D)^(1E)^(1F)^(20)^(7F)"
 non-space: complement space-char
 special-char: charset "@%\:'<>+-~|_.,#$"
-;word-char: complement charset "@%\,#$:"
+
 line-break: [
     [
         "^(0A)^(0D)"
@@ -450,12 +450,12 @@ word: context [
                 num-starter delimiter ;num-starters can be words by themselves
                 | [
                     opt num-starter
-                    regular-word-char
+                    [regular-word-char | num-starter]
                     any [num-starter | regular-word-char | digit]
                 ]
                 | some #"/" and delimiter ;all-slash words
             ]
-        ] (val: to word! s)
+        ] (val: to word! to string! s)
         ;special words starting with #"<", not a tag
         | "<<" and delimiter (val: '<<)
         | "<=" and delimiter (val: '<=)
@@ -658,7 +658,7 @@ url: context [
             ; replace all %xx
             parse val [
                 while [
-                    change [#"%" copy s [2 hex-digit] (dump s c: to char! read-hex s)] c
+                    change [#"%" copy s [2 hex-digit] (c: to char! read-hex s)] c
                     | skip
                 ]
             ]
@@ -708,12 +708,35 @@ construct: context [
     ]
 ]
 
+tuple: context [
+    val: _
+
+    rule: [
+        (val: make binary! 7)
+        integer/rule (append val integer/val)
+        #"." unsigned-integer/rule (append val unsigned-integer/val)
+        some [#"."
+            [
+                unsigned-integer/rule (append val unsigned-integer/val)
+                | pos: (abort 'invalid-tuple)
+            ]
+        ]
+
+        (val: to tuple! val)
+    ]
+]
+
 email: context [
     val: _
-    id: charset [digit letter "_."]
+    leading-email-char: complement charset "<@"
+    non-at: complement charset "@"
     rule: [
-        copy val [id #"@" id some [#"." id]]
-        (val: to email! val)
+        copy val [
+            leading-email-char
+            any non-at
+            #"@"
+            any [not delimiter] ; "to delimiter" causes invalid-rule error ???
+        ] (val: to email! val)
     ]
 ]
 
@@ -730,14 +753,22 @@ comment: context [
     ]
 ]
 
-pre-parse: does [
+pre-parse: func [
+    source [binary! string!]
+][
     clear stack
     array: make block! 1
+    pos: source
+    last-line: source
+    line-no: 0
+    err: _
 ]
 
 item: context [
     val: _
     rule: [
+        ; sequence is important
+        pos:
         #"|" and delimiter              (val: '|)
         | "'|" and delimiter            (val: to lit-bar! '|)
         | #"_" and delimiter            (val: _)
@@ -756,11 +787,14 @@ item: context [
         | lit-word/rule                 (val: lit-word/val)             ;    '
         | get-word/rule                 (val: get-word/val)             ;    :
 
+        | email/rule                    (val: email/val)
+
+        | tuple/rule                    (val: tuple/val)
+        | percent/rule                  (val: percent/val)              ;before decimal
+        | decimal/rule                  (val: decimal/val)              ;before integer
         | pair/rule                     (val: pair/val)
         | time/rule                     (val: time/val)                 ;before integer
         | date/rule                     (val: date/val)                 ;before integer
-        | percent/rule                  (val: percent/val)              ;before decimal
-        | decimal/rule                  (val: decimal/val)              ;before integer
         | integer/rule [and delimiter | pos: (abort 'invalid-integer)]
                                         (val: integer/val)
         | url/rule                      (val: url/val)                  ;before set-word
@@ -771,8 +805,6 @@ item: context [
 
         | refinement/rule               (val: refinement/val)           ;#"/"
         | tag/rule                      (val: tag/val)                  ;#"<"
-        ;| delimiter                                                    ; non-space delimiters must have been consumed
-        ;| skip                          ();invalid UTF8 byte?
     ]
 ]
 
@@ -780,7 +812,6 @@ rebol: context [
     rule: [
         any [
             pos:
-            ;special-char: charset "@%\:'<>+-~|_.,#$"
             ; sequence is important
             end
             | space
@@ -796,11 +827,11 @@ scan-source: function [
     source [binary! string!]
 ][
     debug ["scanning:" mold source]
-    pre-parse
+    pre-parse source
 
     ;trace on
     if parse source rebol/rule [
-        ;print ["block:" mold array]
+        print ["block:" mold array]
         return array
     ]
 
