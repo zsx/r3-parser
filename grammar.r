@@ -9,8 +9,9 @@ debug: :print
 
 err: _
 pos: _
-line-no: 0
+line-no: 1
 last-line: _
+open-at: 0x0
 
 read-hex: function [
     num [string! binary!]
@@ -41,6 +42,7 @@ abort: func [
     reason [word!]
 ][
     print ["Aborting due to" reason "at:" line-no "x" (index-of pos) - (index-of last-line)]
+    print ["Last open-at:" mold open-at]
     print ["source:" to string! pos]
     err: reason
     fail (select* syntax-errors reason else spaced ["Unknown error" reason])
@@ -56,12 +58,14 @@ space-char: charset "^@^(01)^(02)^(03)^(04)^(05)^(06)^(07)^(08)^(09)^(0A)^(0B)^(
 non-space: complement space-char
 special-char: charset "@%\:'<>+-~|_.,#$"
 
+count-line-no?: true
+
 line-break: [
     [
         "^(0A)^(0D)"
-        | "^(0A)"
-        | "^(0D)"
-    ] last-line: (++ line-no)
+        | #"^(0A)"
+        | #"^(0D)"
+    ] last-line: (if count-line-no? [++ line-no])
 ]
 
 space: [
@@ -76,8 +80,29 @@ delimiter: [
     | end
 ]
 
+and-delimiter: [
+    (count-line-no?: false)
+    [and delimiter (count-line-no?: true) | (count-line-no?: true) fail]
+]
+
+open-brace: [
+    pos: #"^{" (open-at: to pair! reduce [line-no (index-of pos) - (index-of last-line)])
+]
+
+open-bracket: [
+    pos: #"[" (open-at: to pair! reduce [line-no (index-of pos) - (index-of last-line)])
+]
+
+open-quote: [
+    pos: #"^"" (open-at: to pair! reduce [line-no (index-of pos) - (index-of last-line)])
+]
+
+open-paren: [
+    pos: #"(" (open-at: to pair! reduce [line-no (index-of pos) - (index-of last-line)])
+]
+
 required-close-brace: [
-    #"}" | pos: (abort 'missing-close-bracket)
+    #"^}" | pos: (abort 'missing-close-brace)
 ]
 
 required-quote: [
@@ -97,7 +122,7 @@ unsigned-integer: context [
         ]
         (if error? err: try [val: to integer! s][
             ;FIXME: examine the error for better error message
-            fail ["invalid integer! at:" pos]
+            abort 'invalid-integer
         ])
     ]
 ]
@@ -113,7 +138,7 @@ integer: context [
         ]
         (if error? err: try [val: to integer! s][
             ;FIXME: examine the error for better error message
-            fail ["invalid integer! at:" pos]
+            abort 'invalid-integer
         ])
     ]
 ]
@@ -215,7 +240,7 @@ time: context [
         (
             val: make time! reduce [hour minute sec]
             if all [intra-day any [hour < 0 hour >= 24]][
-                fail "time format incorrect for intra-day time"
+                abort 'invalid-time
             ]
         )
     ]
@@ -227,10 +252,10 @@ pair: context [
 
     rule: [
         [
-            decimal/rule (x: decimal/val)
+            any-number/rule (x: any-number/val)
             #"x"
-            decimal/rule 
-            (val: to pair! reduce [x decimal/val])
+            any-number/rule
+            (val: to pair! reduce [x any-number/val])
         ]
     ]
 ]
@@ -305,11 +330,10 @@ date: context [
 
 string: context [
     val: _
-    nest: 0
-    n: _
     s: _
-    non-quote: complement charset {"}
-    non-close-paren: complement charset ")"
+    b: _
+    c: _
+    non-quote: complement charset "^""
 
     named-escapes: [
         "line"     "^(line)"
@@ -361,55 +385,55 @@ string: context [
 
     init: does [
         val: _
-        nest: 0
-        n: _
         b: _
+        c: _
+    ]
+    non-close-brace: complement charset "^}"
+
+    in-brace-rule: [
+        any [
+            {^^^^}
+            | "^^{"
+            | "^^}"
+            | line-break
+
+            ;unescaped braces
+            | open-brace in-brace-rule required-close-brace
+            | non-close-brace
+        ]
     ]
 
     rule: [
+        (init)
         [
-            #"^"" copy val [
+            open-quote copy val [
                 any [
-                    {^^"}
+                    {^^^^}
+                    | {^^"}
                     | line-break (abort 'missing-close-quote)
                     | non-quote
                 ]
-            ]["^"" | pos: (abort 'missing-close-quote)]
-            | #"^{" copy val [
-                some [
-                    "^^{"
-                    | "^^}"
-
-                    ;unescaped braces
-                    | #"^{" (++ nest)
-                    | #"^}" (-- nest n: either zero? nest [break] [_]) n
-
-                    | line-break
-                    | skip
-                ]
-            ] pos: (
-                unless #"^}" = last pos [
-                    abort 'missing-close-brace
-                ]
-                unless zero? nest [
-                    abort 'unbalanced-braces
-                ]
-                remove back tail val ;remove the trailing "^}"
-            )
+            ] required-quote
+            | open-brace copy val [ in-brace-rule ] required-close-brace
         ](
             ;process escaping
+            ;print ["unescapped string:" mold val]
+            ;trace on
             parse val [
                 while [
-                    change ["^^("
+                    change {^^^^} {^^}
+                    | change ["^^("
                         [
-                            copy s [ 4 digit | 2 hex-digit] (c: to char! read-hex s)
-                            | copy s [some non-close-paren] (c: select named-escapes s if blank? c [abort 'unrecognized-named-escape])
+                            copy s [ 4 digit | 2 hex-digit] and ")" (c: to char! read-hex s) ;and ")" is to prevent it matches the "ba" in "back"
+                            | copy s [some letter] (c: select named-escapes s if blank? c [abort 'unrecognized-named-escape])
                         ]
                         ")"] c
-                    | change ["^^" set b byte] (c: select named-escapes b unless c [c: ""]) c
+                    | change ["^^" set b byte (c: any [select escapes b b])] c
                     | skip
                 ]
             ]
+            ;trace off
+            ;print ["escapped string:" mold val]
         )
     ]
 ]
@@ -418,15 +442,15 @@ binary: context [
     val: _
     s: _
     rule: [
-        "#{" (val: make binary! 1)
+        "#" open-brace (val: make binary! 1)
             any [
                 copy s [
-                    digit | pos: (err: 'invalid-hex-digit) fail
+                    digit | pos: (abort 'invalid-hex-digit)
                     pos:
                     [
-                        digit 
-                        | #"}" (err: 'odd-binary-digit) fail
-                        | (err: 'invalid-hex-digit) fail
+                        digit
+                        | #"^}" (abort 'odd-binary-digit)
+                        | (abort 'invalid-hex-digit)
                     ]
                 ] (append val read-hex s)
             ]
@@ -453,23 +477,23 @@ word: context [
                     [regular-word-char | num-starter]
                     any [num-starter | regular-word-char | digit]
                 ]
-                | some #"/" and delimiter ;all-slash words
+                | some #"/" and-delimiter ;all-slash words
             ]
         ] (val: to word! to string! s)
         ;special words starting with #"<", not a tag
-        | "<<" and delimiter (val: '<<)
-        | "<=" and delimiter (val: '<=)
-        | "<>" and delimiter (val: '<>)
-        | "<|" and delimiter (val: to word! "<|")
-        | "<-" and delimiter (val: to word! "<-")
-        | ">>" and delimiter (val: '>>)
-        | ">=" and delimiter (val: '>=)
+        | "<<" and-delimiter (val: '<<)
+        | "<=" and-delimiter (val: '<=)
+        | "<>" and-delimiter (val: '<>)
+        | "<|" and-delimiter (val: to word! "<|")
+        | "<-" and-delimiter (val: to word! "<-")
+        | ">>" and-delimiter (val: '>>)
+        | ">=" and-delimiter (val: '>=)
 
         ; some special chars can be signle-char words
         ; "@%\:,',$" are exceptions
-        | #"#" and delimiter (val: _) ;bug???
-        | #"<" and delimiter (val: '<)
-        | #">" and delimiter (val: '>)
+        | #"#" and-delimiter (val: _) ;bug???
+        | #"<" and-delimiter (val: '<)
+        | #">" and-delimiter (val: '>)
     ]
 ]
 
@@ -533,6 +557,7 @@ path: context [
             #"/"
             [
                 (insert/only stack val) ;this could cause recursive calls to path/rule
+                ;(print "calling item/rule from path")
                 item/rule (
                     val: take stack
                     append/only val item/val
@@ -560,7 +585,7 @@ set-path: context [
 
 lit-path: context [
     val: _
-    rule: [ 
+    rule: [
         lit-prefix
         [
             [lit-prefix | #":"] (abort 'invalid-lit-path-word)
@@ -611,7 +636,7 @@ group: context [
 block: context [
     val: _
     rule: [
-        #"[" (
+        open-bracket (
             insert/only stack array
             array: make block! 1
         )
@@ -651,8 +676,7 @@ url: context [
             any [
                 [#"%" 2 hex-digit]
                 | #"/"
-                | delimiter break
-                | skip
+                | [not delimiter]
             ]
         ] (
             ; replace all %xx
@@ -673,7 +697,8 @@ char: context [
     rule: [
         {#} string/rule (
             unless 1 = length string/val [
-                fail 'invalid-char
+                ;print ["length of string is not 1" mold string/val]
+                abort 'invalid-char
             ]
             val: first string/val
         )
@@ -708,16 +733,32 @@ construct: context [
     ]
 ]
 
+byte-integer: context [
+    val: _
+    four-or-less: charset "01234"
+    five-or-less: charset "012345"
+    rule: [
+        copy val [
+            #"1" opt [digit opt digit]
+            | #"2" [
+                four-or-less digit
+                | #"5" five-or-less
+            ]
+            | digit opt digit
+        ] (val: to integer! val)
+    ]
+]
+
 tuple: context [
     val: _
 
     rule: [
         (val: make binary! 7)
-        integer/rule (append val integer/val)
-        #"." unsigned-integer/rule (append val unsigned-integer/val)
+        byte-integer/rule (append val byte-integer/val)
+        #"." byte-integer/rule (append val byte-integer/val)
         some [#"."
             [
-                unsigned-integer/rule (append val unsigned-integer/val)
+                byte-integer/rule (append val byte-integer/val)
                 | pos: (abort 'invalid-tuple)
             ]
         ]
@@ -728,8 +769,8 @@ tuple: context [
 
 email: context [
     val: _
-    leading-email-char: complement charset "<@"
-    non-at: complement charset "@"
+    leading-email-char: complement union space-char charset "<@"
+    non-at: complement union space-char charset "@"
     rule: [
         copy val [
             leading-email-char
@@ -748,8 +789,16 @@ void: context [
 ]
 
 comment: context [
+    val: _
     rule: [
-        #";" thru "^/"
+        copy val [
+            #";" thru
+            [
+                "^(0A)^(0D)"
+                | #"^(0A)"
+                | #"^(0D)"
+            ] last-line: (if count-line-no? [++ line-no])
+        ] ;(print ["comment found:" mold val])
     ]
 ]
 
@@ -760,7 +809,7 @@ pre-parse: func [
     array: make block! 1
     pos: source
     last-line: source
-    line-no: 0
+    line-no: 1
     err: _
 ]
 
@@ -768,10 +817,10 @@ item: context [
     val: _
     rule: [
         ; sequence is important
-        pos:
-        #"|" and delimiter              (val: '|)
-        | "'|" and delimiter            (val: to lit-bar! '|)
-        | #"_" and delimiter            (val: _)
+        ;pos: (print ["matching item/rule against^/" copy/part pos 80])
+        #"|" and-delimiter              (val: '|)
+        | "'|" and-delimiter            (val: to lit-bar! '|)
+        | #"_" and-delimiter            (val: _)
         | block/rule                    (val: block/val)                ;    [
         ;| void/rule                    (val: block/val)                ;    (
         | group/rule                    (val: group/val)                ;    (
@@ -795,7 +844,7 @@ item: context [
         | pair/rule                     (val: pair/val)
         | time/rule                     (val: time/val)                 ;before integer
         | date/rule                     (val: date/val)                 ;before integer
-        | integer/rule [and delimiter | pos: (abort 'invalid-integer)]
+        | integer/rule ;[and-delimiter | (abort 'invalid-integer)]
                                         (val: integer/val)
         | url/rule                      (val: url/val)                  ;before set-word
         | set-path/rule                 (val: set-path/val)             ;before path
@@ -826,15 +875,18 @@ rebol: context [
 scan-source: function [
     source [binary! string!]
 ][
-    debug ["scanning:" mold source]
+;    debug ["scanning:" mold source]
     pre-parse source
 
     ;trace on
-    if parse source rebol/rule [
-        print ["block:" mold array]
-        return array
+    ret: try [parse source rebol/rule]
+    ;trace off
+;    debug ["block:" mold array]
+    if error? ret [
+        fail ret
     ]
 
-    ;print ["partial block:" mold array]
-    fail spaced ["Syntax error at:" pos]
+    if ret [
+        return array
+    ]
 ]

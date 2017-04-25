@@ -43,6 +43,7 @@ for-each f [
     %date.r
     %word.r
     %array.r
+    %pair.r
     %string.r
     %word.r
     %refinement.r
