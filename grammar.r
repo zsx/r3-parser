@@ -94,19 +94,19 @@ and-delimiter: [
 ]
 
 open-brace: [
-    pos: #"^{" (open-at: to pair! reduce [line-no (index-of pos) - (index-of last-line)])
+    pos: #"^{" (open-at: to pair! reduce [line-no 1 + (index-of pos) - (index-of last-line)])
 ]
 
 open-bracket: [
-    pos: #"[" (open-at: to pair! reduce [line-no (index-of pos) - (index-of last-line)])
+    pos: #"[" (open-at: to pair! reduce [line-no 1 + (index-of pos) - (index-of last-line)])
 ]
 
 open-quote: [
-    pos: #"^"" (open-at: to pair! reduce [line-no (index-of pos) - (index-of last-line)])
+    pos: #"^"" (open-at: to pair! reduce [line-no 1 + (index-of pos) - (index-of last-line)])
 ]
 
 open-paren: [
-    pos: #"(" (open-at: to pair! reduce [line-no (index-of pos) - (index-of last-line)])
+    pos: #"(" (open-at: to pair! reduce [line-no 1 + (index-of pos) - (index-of last-line)])
 ]
 
 required-close-brace: [
