@@ -754,6 +754,7 @@ tuple: context [
 
     rule: [
         (val: make binary! 7)
+        opt #"+"
         byte-integer/rule (append val byte-integer/val)
         #"." byte-integer/rule (append val byte-integer/val)
         some [#"."
