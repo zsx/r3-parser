@@ -134,7 +134,7 @@ unsigned-integer: context [
 
     rule: [
         copy s [
-            some digit ;allow leading zeros
+            some [digit | #"'"] ;allow leading zeros
         ]
         (if error? err: try [val: to integer! s][
             ;FIXME: examine the error for better error message
@@ -170,7 +170,10 @@ unsigned-decimal: context [
     ]
 
     rule: [
-        any digit
+        opt [
+            digit
+            any [digit | #"'"]
+        ]
         [
             [fraction opt exponential]
             | [opt fraction exponential]
