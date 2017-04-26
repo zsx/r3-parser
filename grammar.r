@@ -657,7 +657,7 @@ url: context [
             any [
                 [#"%" 2 hex-digit]
                 | #"/"
-                | delimiter break
+                | and delimiter break
                 | skip
             ]
         ] (
