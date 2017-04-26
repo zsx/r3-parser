@@ -35,7 +35,24 @@ read-hex: function [
 ]
 
 syntax-errors: [
-    invalid-integer "Invalid integer"
+    invalid-integer             "Invalid integer"
+    invalid-time                "Invalid time"
+    invalid-tuple               "Invalid tuple"
+    invalid-issue               "Invalid issue"
+    invalid-path                "Invalid path"
+    invalid-refinement          "Invalid refinement"
+    invalid-char                "Invalid char"
+    invalid-hex-digit           "Invalid hex digit"
+    invalid-lit-word-path       "Invalid lit word or path"
+    invalid-get-word-path       "Invalid get word or path"
+    odd-binary-digit            "Dangling digit at the end" ;must be in pair
+    missing-close-paren         "Missing a close parenthesis ')'"
+    missing-close-brace         "Missing a close brace '}'"
+    missing-close-bracket       "Missing a close bracket ']'"
+    missing-close-quote         {Missing a quotation mark (")}
+    unrecognized-named-escape   "Unrecognized named escape"
+    mal-construct               "Malconstruct"
+    syntax-error                "Syntax error"
 ]
 
 abort: func [
@@ -599,7 +616,7 @@ lit-path: context [
     rule: [
         lit-prefix
         [
-            [lit-prefix | #":"] (abort 'invalid-lit-path-word)
+            [lit-prefix | #":"] (abort 'invalid-lit-word-path)
             | path/rule (val: to lit-path! path/val)
         ]
     ]
