@@ -117,6 +117,14 @@ required-quote: [
     #"^"" | pos: (abort 'missing-close-quote)
 ]
 
+required-close-paren: [
+    [#")" | pos: (abort 'missing-close-paren)]
+]
+
+required-close-bracket: [
+    [#"]" | pos: (abort 'missing-close-bracket)]
+]
+
 required-close-angle: [
 ]
 
@@ -430,12 +438,12 @@ string: context [
             parse val [
                 while [
                     change {^^^^} {^^}
-                    | change ["^^("
+                    | change ["^^" open-paren
                         [
                             copy s [ 4 digit | 2 hex-digit] and ")" (c: to char! read-hex s) ;and ")" is to prevent it matches the "ba" in "back"
                             | copy s [some letter] (c: select named-escapes s if blank? c [abort 'unrecognized-named-escape])
                         ]
-                        ")"] c
+                        required-close-paren] c
                     | change ["^^" set b byte (c: any [select escapes b b])] c
                     | skip
                 ]
@@ -453,10 +461,10 @@ binary: context [
         "#" open-brace (val: make binary! 1)
             any [
                 copy s [
-                    digit | pos: (abort 'invalid-hex-digit)
+                    hex-digit | pos: (abort 'invalid-hex-digit)
                     pos:
                     [
-                        digit
+                        hex-digit
                         | #"^}" (abort 'odd-binary-digit)
                         | (abort 'invalid-hex-digit)
                     ]
@@ -590,7 +598,7 @@ file: context [
     rule: [
         #"%" [
             [
-                #"^""
+                open-quote
                 copy s [any valid-in-quotes]
                 required-quote
             ] | [
@@ -606,9 +614,9 @@ stack: make block! 32
 group: context [
     val: _
     rule: [
-        #"("
+        open-paren
         rebol/rule (val: as group! rebol/val)
-        [#")" | pos: (abort 'missing-close-paren)]
+        required-close-paren
     ]
 ]
 
@@ -617,7 +625,7 @@ block: context [
     rule: [
         open-bracket
         rebol/rule (val: rebol/val)
-        [#"]" | pos: (abort 'missing-close-bracket)]
+        required-close-bracket
     ]
 ]
 
@@ -858,9 +866,7 @@ nested-rebol: context [
             end
             | space
             | comment/rule
-            ; sequence is important
-            ;pos: (print ["matching item/rule against^/" copy/part pos 80])
-            | #"|" and-delimiter              (append/only val '|)
+            | #"|" and-delimiter            (append/only val '|)
             | "'|" and-delimiter            (append/only val to lit-bar! '|)
             | #"_" and-delimiter            (append/only val _)
             | block/rule                    (append/only val block/val)                ;    [
@@ -897,7 +903,7 @@ nested-rebol: context [
             | refinement/rule               (append/only val refinement/val)           ;#"/"
             | tag/rule                      (append/only val tag/val)                  ;#"<"
             ;| skip                          ();invalid UTF8 byte?
-            | [and [#")" | #"]"] | pos: (abort 'invalid-word)]
+            | [and [#")" | #"]"] | pos: (abort 'syntax-error)]
         ]
     ]
 ]

@@ -11,12 +11,15 @@ assert-scan: procedure [
     src [string! binary!]
 ][
     ++ testcases
+    prin ["Scanning" mold src ", "]
     either error? expected: try [load/all src][
         either error? actual: try [
             scan-source src
         ][
             ++ pass
+            print ["PASS"]
         ][
+            print ["XPASS"]
             print ["actual:" mold actual]
             print ["expected:" mold expected]
             append/only xpass reduce [f src actual expected]
@@ -25,6 +28,7 @@ assert-scan: procedure [
         actual: try [scan-source src]
         either expected = actual [
             ++ pass
+            print ["PASS"]
         ][
             print ["Failure"]
             print ["actual:" mold actual]
