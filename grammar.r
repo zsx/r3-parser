@@ -468,20 +468,23 @@ string: context [
 
 binary: context [
     val: _
-    s: _
+    h1: _
+    h2: _
     rule: [
         "#" open-brace (val: make binary! 1)
             any [
                 and #"}" break
-                | copy s [
-                    [hex-digit | pos: (abort 'invalid-hex-digit)]
+                | space
+                | [
+                    [set h1 hex-digit | pos: (abort 'invalid-hex-digit)]
+                    opt space
                     pos:
                     [
-                        hex-digit
+                        set h2 hex-digit
                         | #"^}" (abort 'odd-binary-digit)
                         | (abort 'invalid-hex-digit)
                     ]
-                ] (append val read-hex s)
+                ] (append val read-hex ajoin [h1 h2])
             ]
         required-close-brace
     ]
