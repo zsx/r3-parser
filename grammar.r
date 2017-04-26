@@ -58,14 +58,16 @@ space-char: charset "^@^(01)^(02)^(03)^(04)^(05)^(06)^(07)^(08)^(09)^(0A)^(0B)^(
 non-space: complement space-char
 special-char: charset "@%\:'<>+-~|_.,#$"
 
-count-line-no?: true
+
+not-counted-line-break: [
+    "^(0A)^(0D)"
+    | #"^(0A)"
+    | #"^(0D)"
+]
 
 line-break: [
-    [
-        "^(0A)^(0D)"
-        | #"^(0A)"
-        | #"^(0D)"
-    ] last-line: (if count-line-no? [++ line-no])
+    not-counted-line-break
+    last-line: (++ line-no)
 ]
 
 space: [
@@ -81,8 +83,14 @@ delimiter: [
 ]
 
 and-delimiter: [
-    (count-line-no?: false)
-    [and delimiter (count-line-no?: true) | (count-line-no?: true) fail]
+    [ and
+        [
+            not-counted-line-break
+            | space-char
+            | non-space-delimiter
+            | end
+        ]
+    ]
 ]
 
 open-brace: [
@@ -794,12 +802,10 @@ comment: context [
     val: _
     rule: [
         copy val [
-            #";" thru
-            [
-                "^(0A)^(0D)"
-                | #"^(0A)"
-                | #"^(0D)"
-            ] last-line: (if count-line-no? [++ line-no])
+            #";" any [
+                line-break break
+                | skip
+            ]
         ] ;(print ["comment found:" mold val])
     ]
 ]
