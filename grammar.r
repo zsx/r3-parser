@@ -553,28 +553,7 @@ refinement: context [
     ]
 ]
 
-path: context [
-    val: _
 
-    rule: [
-        word/rule (
-            val: make path! 1
-            append/only val word/val
-        )
-        some [
-            #"/"
-            [
-                (insert/only stack val) ;this could cause recursive calls to path/rule
-                ;(print "calling item/rule from path")
-                item/rule (
-                    val: take stack
-                    append/only val item/val
-                )
-                | (take stack) pos: (abort 'invalid-path)
-            ]
-        ]
-    ]
-]
 
 get-path: context [
     val: _
@@ -623,20 +602,12 @@ file: context [
 ]
 
 stack: make block! 32
-array: _
 
 group: context [
     val: _
     rule: [
-        #"(" (
-            insert/only stack array
-            array: make group! 1
-        )
-        rebol/rule
-        (
-            val: array
-            array: take stack
-        )
+        #"("
+        rebol/rule (val: as group! rebol/val)
         [#")" | pos: (abort 'missing-close-paren)]
     ]
 ]
@@ -644,15 +615,8 @@ group: context [
 block: context [
     val: _
     rule: [
-        open-bracket (
-            insert/only stack array
-            array: make block! 1
-        )
-        rebol/rule
-        (
-            val: array
-            array: take stack
-        )
+        open-bracket
+        rebol/rule (val: rebol/val)
         [#"]" | pos: (abort 'missing-close-bracket)]
     ]
 ]
@@ -814,69 +778,138 @@ pre-parse: func [
     source [binary! string!]
 ][
     clear stack
-    array: make block! 1
     pos: source
     last-line: source
     line-no: 1
     err: _
 ]
 
-item: context [
+path: context [
     val: _
     rule: [
-        ; sequence is important
-        ;pos: (print ["matching item/rule against^/" copy/part pos 80])
-        #"|" and-delimiter              (val: '|)
-        | "'|" and-delimiter            (val: to lit-bar! '|)
-        | #"_" and-delimiter            (val: _)
-        | block/rule                    (val: block/val)                ;    [
-        ;| void/rule                    (val: block/val)                ;    (
-        | group/rule                    (val: group/val)                ;    (
-        | string/rule                   (val: string/val)               ;    {
-        | char/rule                     (val: char/val)                 ;    #{ or #"
-        | binary/rule                   (val: binary/val)               ;    #{ or 64#
-        | construct/rule                (val: construct/val)            ;    #[
-        | issue/rule                    (val: issue/val)                ;    #
-        | file/rule                     (val: file/val)                 ;    %
-        | money/rule                    (val: money/val)                ;    $
-        | lit-path/rule                 (val: lit-path/val)             ;    '
-        | get-path/rule                 (val: get-path/val)             ;    :
-        | lit-word/rule                 (val: lit-word/val)             ;    '
-        | get-word/rule                 (val: get-word/val)             ;    :
-
-        | email/rule                    (val: email/val)
-
-        | tuple/rule                    (val: tuple/val)
-        | percent/rule                  (val: percent/val)              ;before decimal
-        | decimal/rule                  (val: decimal/val)              ;before integer
-        | pair/rule                     (val: pair/val)
-        | time/rule                     (val: time/val)                 ;before integer
-        | date/rule                     (val: date/val)                 ;before integer
-        | integer/rule ;[and-delimiter | (abort 'invalid-integer)]
-                                        (val: integer/val)
-        | url/rule                      (val: url/val)                  ;before set-word
-        | set-path/rule                 (val: set-path/val)             ;before path
-        | path/rule                     (val: path/val)                 ;before word
-        | set-word/rule                 (val: set-word/val)             ;before word
-        | word/rule                     (val: word/val)                 ;before refinement, because #"/" could be a word
-
-        | refinement/rule               (val: refinement/val)           ;#"/"
-        | tag/rule                      (val: tag/val)                  ;#"<"
+        (insert/only stack nested-path/val)
+        nested-path/rule (
+            val: nested-path/val
+            nested-path/val: take stack
+        ) | (nested-path/val: take stack) fail
     ]
 ]
 
-rebol: context [
+nested-path: context [
+    val: _
+
     rule: [
+        word/rule (
+            val: make path! 1
+            append/only val word/val
+        )
+        some [
+            #"/"
+            [
+                #"|" and-delimiter              (append/only val '|)
+                | "'|" and-delimiter            (append/only val to lit-bar! '|)
+                | #"_" and-delimiter            (append/only val _)
+                | block/rule                    (append/only val block/val)                ;    [
+                ;| void/rule                    (append/only val block/val)                ;    (
+                | group/rule                    (append/only val group/val)                ;    (
+                | string/rule                   (append/only val string/val)               ;    {
+                | char/rule                     (append/only val char/val)                 ;    #{ or #"
+                | binary/rule                   (append/only val binary/val)               ;    #{ or 64#
+                | construct/rule                (append/only val construct/val)            ;    #[
+                | issue/rule                    (append/only val issue/val)                ;    #
+                | file/rule                     (append/only val file/val)                 ;    %
+                | money/rule                    (append/only val money/val)                ;    $
+                ;| lit-path/rule                 (append/only val lit-path/val)             ;    '
+                ;| get-path/rule                 (append/only val get-path/val)             ;    :
+                | lit-word/rule                 (append/only val lit-word/val)             ;    '
+                | get-word/rule                 (append/only val get-word/val)             ;    :
+
+                | email/rule                    (append/only val email/val)
+
+                | tuple/rule                    (append/only val tuple/val)                ;before percent
+                | percent/rule                  (append/only val percent/val)              ;before decimal
+                | decimal/rule                  (append/only val decimal/val)              ;before integer
+                | pair/rule                     (append/only val pair/val)
+                | time/rule                     (append/only val time/val)                 ;before integer
+                ;| date/rule                     (append/only val date/val)                 ;before integer
+                | integer/rule ;[and-delimiter | (abort 'invalid-integer)]
+                                                (append/only val integer/val)
+                | url/rule                      (append/only val url/val)                  ;before set-word
+                ;| set-path/rule                 (append/only val set-path/val)             ;before path
+                ;| path/rule                     (append/only val path/val)                 ;before word
+                | set-word/rule                 (append/only val set-word/val)             ;before word
+                | word/rule                     (append/only val word/val)                 ;before refinement, because #"/" could be a word
+
+                | refinement/rule               (append/only val refinement/val)           ;#"/"
+                | tag/rule                      (append/only val tag/val)                  ;#"<"
+                | pos: (abort 'invalid-path)
+            ]
+        ]
+    ]
+]
+
+nested-rebol: context [
+    val: _
+    rule: [
+        (val: make block! 1)
         any [
             pos:
             ; sequence is important
             end
             | space
             | comment/rule
-            | item/rule         (append/only array item/val)
+            ; sequence is important
+            ;pos: (print ["matching item/rule against^/" copy/part pos 80])
+            | #"|" and-delimiter              (append/only val '|)
+            | "'|" and-delimiter            (append/only val to lit-bar! '|)
+            | #"_" and-delimiter            (append/only val _)
+            | block/rule                    (append/only val block/val)                ;    [
+            ;| void/rule                    (append/only val block/val)                ;    (
+            | group/rule                    (append/only val group/val)                ;    (
+            | string/rule                   (append/only val string/val)               ;    {
+            | char/rule                     (append/only val char/val)                 ;    #{ or #"
+            | binary/rule                   (append/only val binary/val)               ;    #{ or 64#
+            | construct/rule                (append/only val construct/val)            ;    #[
+            | issue/rule                    (append/only val issue/val)                ;    #
+            | file/rule                     (append/only val file/val)                 ;    %
+            | money/rule                    (append/only val money/val)                ;    $
+            | lit-path/rule                 (append/only val lit-path/val)             ;    '
+            | get-path/rule                 (append/only val get-path/val)             ;    :
+            | lit-word/rule                 (append/only val lit-word/val)             ;    '
+            | get-word/rule                 (append/only val get-word/val)             ;    :
+
+            | email/rule                    (append/only val email/val)
+
+            | tuple/rule                    (append/only val tuple/val)                ;before percent
+            | percent/rule                  (append/only val percent/val)              ;before decimal
+            | decimal/rule                  (append/only val decimal/val)              ;before integer
+            | pair/rule                     (append/only val pair/val)
+            | time/rule                     (append/only val time/val)                 ;before integer
+            | date/rule                     (append/only val date/val)                 ;before integer
+            | integer/rule [and-delimiter | (abort 'invalid-integer)]
+                                            (append/only val integer/val)
+            | url/rule                      (append/only val url/val)                  ;before set-word
+            | set-path/rule                 (append/only val set-path/val)             ;before path
+            | path/rule                     (append/only val path/val)                 ;before word
+            | set-word/rule                 (append/only val set-word/val)             ;before word
+            | word/rule                     (append/only val word/val)                 ;before refinement, because #"/" could be a word
+
+            | refinement/rule               (append/only val refinement/val)           ;#"/"
+            | tag/rule                      (append/only val tag/val)                  ;#"<"
             ;| skip                          ();invalid UTF8 byte?
             | [and [#")" | #"]"] | pos: (abort 'invalid-word)]
         ]
+    ]
+]
+
+rebol: context [
+    val: _
+    rule: [
+        (insert/only stack nested-rebol/val)
+        nested-rebol/rule (
+            val: nested-rebol/val
+            nested-rebol/val: take stack
+        ) | (nested-rebol/val: take stack) fail
     ]
 ]
 
@@ -889,12 +922,12 @@ scan-source: function [
     ;trace on
     ret: try [parse source rebol/rule]
     ;trace off
-;    debug ["block:" mold array]
+;    debug ["block:" mold rebol/val]
     if error? ret [
         fail ret
     ]
 
     if ret [
-        return array
+        return rebol/val
     ]
 ]
