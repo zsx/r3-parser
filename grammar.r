@@ -488,7 +488,7 @@ word: context [
     rule: [
         copy s [
             [
-                num-starter delimiter ;num-starters can be words by themselves
+                num-starter [and-delimiter | and #":"] ;num-starters can be words by themselves
                 | [
                     opt num-starter
                     [regular-word-char | num-starter]
