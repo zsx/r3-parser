@@ -692,11 +692,11 @@ construct: context [
         #"#"
         block/rule
         (
-            debug ["block:" mold block/val]
+            ;debug ["block:" mold block/val]
             switch/default length block/val [
                 2 [
-                    val: bind block/val lib
-                    val: make val/1 val/2
+                    insert block/val :make
+                    val: do bind block/val lib
                 ]
                 1 [; #[false] #[true] or #[none]
                     val: switch/default first block/val [
