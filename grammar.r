@@ -676,7 +676,8 @@ url: context [
             any [
                 [#"%" 2 hex-digit]
                 | #"/"
-                | [not delimiter]
+                | delimiter break
+                | skip
             ]
         ] (
             ; replace all %xx
@@ -777,7 +778,7 @@ email: context [
             leading-email-char
             any non-at
             #"@"
-            any [not delimiter] ; "to delimiter" causes invalid-rule error ???
+            any [delimiter break | skip] ; "to delimiter" causes invalid-rule error ???
         ] (val: to email! val)
     ]
 ]
