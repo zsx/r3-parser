@@ -58,6 +58,8 @@ space-char: charset "^@^(01)^(02)^(03)^(04)^(05)^(06)^(07)^(08)^(09)^(0A)^(0B)^(
 non-space: complement space-char
 special-char: charset "@%\:'<>+-~|_.,#$"
 
+non-quote: complement charset "^""
+non-close-brace: complement charset "^}"
 
 not-counted-line-break: [
     "^(0A)^(0D)"
@@ -352,7 +354,6 @@ string: context [
     s: _
     b: _
     c: _
-    non-quote: complement charset "^""
 
     named-escapes: [
         "null"     "^(null)"
@@ -403,6 +404,25 @@ string: context [
         #"_"        #"^_"
     ]
 
+    unescape: func [
+        src [string!] "modified"
+    ][
+        parse src [
+            while [
+                change {^^^^} {^^}
+                | change ["^^" open-paren
+                    [
+                        copy s [ 4 digit | 2 hex-digit] and ")" (c: to char! read-hex s) ;and ")" is to prevent it matches the "ba" in "back"
+                        | copy s [some letter] (c: select named-escapes s if blank? c [abort 'unrecognized-named-escape])
+                    ]
+                    required-close-paren] c
+                | change ["^^" set b byte (c: any [select escapes b b])] c
+                | skip
+            ]
+        ]
+        src
+    ]
+
     init: does [
         val: _
         b: _
@@ -439,19 +459,7 @@ string: context [
             ;process escaping
             ;print ["unescapped string:" mold val]
             ;trace on
-            parse val [
-                while [
-                    change {^^^^} {^^}
-                    | change ["^^" open-paren
-                        [
-                            copy s [ 4 digit | 2 hex-digit] and ")" (c: to char! read-hex s) ;and ")" is to prevent it matches the "ba" in "back"
-                            | copy s [some letter] (c: select named-escapes s if blank? c [abort 'unrecognized-named-escape])
-                        ]
-                        required-close-paren] c
-                    | change ["^^" set b byte (c: any [select escapes b b])] c
-                    | skip
-                ]
-            ]
+            unescape val
             ;trace off
             ;print ["escapped string:" mold val]
         )
@@ -464,8 +472,9 @@ binary: context [
     rule: [
         "#" open-brace (val: make binary! 1)
             any [
-                copy s [
-                    hex-digit | pos: (abort 'invalid-hex-digit)
+                and #"}" break
+                | copy s [
+                    [hex-digit | pos: (abort 'invalid-hex-digit)]
                     pos:
                     [
                         hex-digit
@@ -636,7 +645,6 @@ block: context [
 tag: context [
     val: _
     non-angle-bracket: complement charset ">"
-    non-quote: complement charset {"}
     rule: [
         #"<"
         copy val [
@@ -680,12 +688,28 @@ url: context [
 char: context [
     val: _
     rule: [
-        {#} string/rule (
-            unless 1 = length string/val [
+        #"#" [
+            #"^"" copy val [
+                "^^^^"
+                | "^^^""
+                | "^^" open-paren some letter required-close-paren ;named escape
+                | "^^" skip ;escape
+                | non-quote
+            ] #"^""
+            | #"^{" copy val [
+                "^^^^"
+                | "^^^""
+                | "^^" open-paren some letter required-close-paren ;named escape
+                | "^^" skip ;escape
+                | non-close-brace
+            ] #"^}"
+        ] (
+            string/unescape val
+            unless 1 = length val [
                 ;print ["length of string is not 1" mold string/val]
                 abort 'invalid-char
             ]
-            val: first string/val
+            val: first val
         )
     ]
 ]
