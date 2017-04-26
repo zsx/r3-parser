@@ -556,7 +556,7 @@ issue: context [
     val: _
     rule: [
         #"#"
-        [word/rule (val: to issue! word/rule) | pos: (abort 'invalid-issue)]
+        [word/rule (val: to issue! word/val) | pos: (abort 'invalid-issue)]
     ]
 ]
 
