@@ -834,10 +834,10 @@ nested-path: context [
 
                 | email/rule                    (append/only val email/val)
 
+                | pair/rule                     (append/only val pair/val)                 ;before percent
                 | tuple/rule                    (append/only val tuple/val)                ;before percent
                 | percent/rule                  (append/only val percent/val)              ;before decimal
                 | decimal/rule                  (append/only val decimal/val)              ;before integer
-                | pair/rule                     (append/only val pair/val)
                 | time/rule                     (append/only val time/val)                 ;before integer
                 ;| date/rule                     (append/only val date/val)                 ;before integer
                 | integer/rule ;[and-delimiter | (abort 'invalid-integer)]
@@ -886,10 +886,10 @@ nested-rebol: context [
 
             | email/rule                    (append/only val email/val)
 
+            | pair/rule                     (append/only val pair/val)                 ;before percent
             | tuple/rule                    (append/only val tuple/val)                ;before percent
             | percent/rule                  (append/only val percent/val)              ;before decimal
             | decimal/rule                  (append/only val decimal/val)              ;before integer
-            | pair/rule                     (append/only val pair/val)
             | time/rule                     (append/only val time/val)                 ;before integer
             | date/rule                     (append/only val date/val)                 ;before integer
             | integer/rule [and-delimiter | (abort 'invalid-integer)]
