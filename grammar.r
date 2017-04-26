@@ -352,6 +352,7 @@ string: context [
     non-quote: complement charset "^""
 
     named-escapes: [
+        "null"     "^(null)"
         "line"     "^(line)"
         "tab"      "^(tab)"
         "page"     "^(page)"
