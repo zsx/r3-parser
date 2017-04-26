@@ -57,6 +57,7 @@ for-each f [
     %url.r
     %email.r
     %tuple.r
+    %issue.r
 ][
     for-each s load/all f [
         assert-scan f s
