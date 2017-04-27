@@ -61,6 +61,7 @@ for-each f [
     %binary.r
 ][
     for-each s load/all f [
+        assert-scan f to binary! s
         assert-scan f s
     ]
 ]

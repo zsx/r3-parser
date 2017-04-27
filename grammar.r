@@ -489,7 +489,7 @@ string: context [
                 change {^^^^} {^^}
                 | change ["^^" open-paren pos:
                     [
-                        copy s [ 4 digit | 2 hex-digit] and ")" (c: to char! debase/base to binary! s 16) ;and ")" is to prevent it matches the "ba" in "back"
+                        copy s [ 4 digit | 2 hex-digit] and ")" (c: to char! debase/base to binary! s 16) ;and ")" is to prevent it from matching "ba" in "back"
                         | copy s [some letter] (c: select named-escapes lowercase to string! s if blank? c [abort 'unrecognized-named-escape pos])
                     ]
                     required-close-paren] c
@@ -1047,8 +1047,12 @@ rebol: context [
     ]
 ]
 
-scan-source: func [
+scan-source: function [
     source [binary! string!]
+    <with>
+    binary-source?
+    skip-char
+    skip-char-or-abort
 ][
     ;debug ["scanning:" mold source]
     binary-source?: binary? source
@@ -1062,14 +1066,12 @@ scan-source: func [
     pre-parse source
 
     ;trace on
-    ret: try [parse source rebol/rule]
+    ret: parse source rebol/rule
     ;trace off
-    ;debug ["block:" mold rebol/val]
-    if error? ret [
-        fail ret
-    ]
 
     if ret [
         return rebol/val
     ]
+
+    fail "Uncatched syntax error"
 ]
