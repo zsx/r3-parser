@@ -37,7 +37,8 @@ syntax-errors: [
 abort: func [
     reason [word!]
 ][
-    print ["Aborting due to" reason "at:" line-no "x" (index-of pos) - (index-of last-line)]
+    ;trace off
+    print ["Aborting due to" reason "at:" line-no "x" 1 + (index-of pos) - (index-of last-line)]
     print ["Last open-at:" mold open-at]
     print ["source:" to string! pos]
     err: reason
@@ -970,7 +971,7 @@ scan-source: function [
     ;trace on
     ret: try [parse source rebol/rule]
     ;trace off
-;    debug ["block:" mold rebol/val]
+    ;debug ["block:" mold rebol/val]
     if error? ret [
         fail ret
     ]
