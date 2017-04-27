@@ -73,6 +73,11 @@ byte: complement charset {}
 lit-prefix: {'}
 space-char: charset "^@^(01)^(02)^(03)^(04)^(05)^(06)^(07)^(08)^(09)^(0A)^(0B)^(0C)^(0D)^(0E)^(0F)^(10)^(11)^(12)^(13)^(14)^(15)^(16)^(17)^(18)^(19)^(1A)^(1B)^(1C)^(1D)^(1E)^(1F)^(20)^(7F)"
 non-space: complement space-char
+regular-word-char: charset ["!&*=?" #"A" - #"Z" #"_" "^`" #"a" - #"z" #"|" #"~"
+    #"^(80)" - #"^(BF)" ;old control chars and alternate chars
+    #"^(C2)" - #"^(FE)"
+] ;can appear in anywhere in a word
+
 special-char: charset "@%\:'<>+-~|_.,#$"
 
 non-quote: complement charset "^""
@@ -511,11 +516,6 @@ word: context [
     val: _
     s: _
 
-    regular-word-char: charset ["!&*=?" #"A" - #"Z" #"_" "^`" #"a" - #"z" #"|" #"~"
-        #"^(80)" - #"^(BF)" ;old control chars and alternate chars
-        #"^(C2)" - #"^(FE)"
-    ] ;can appear in anywhere in a word
-
     num-starter: charset "+-." ;must be followed by a non-digit
     rule: [
         copy s [
@@ -574,9 +574,17 @@ lit-word: context [
 
 issue: context [
     val: _
+    issue-char: charset "',.+-"
     rule: [
-        #"#"
-        [word/rule (val: to issue! word/val) | pos: (abort 'invalid-issue)]
+        #"#" [
+            copy val some [
+                ;delimiter reject
+                issue-char
+                | regular-word-char
+                | digit
+            ] (val: to issue! val)
+            | pos: (abort 'invalid-issue)
+        ]
     ]
 ]
 
