@@ -13,27 +13,6 @@ line-no: 1
 last-line: _
 open-at: 0x0
 
-read-hex: function [
-    num [string! binary!]
-][
-    num: uppercase num
-    ret: 0
-    for-each d num [
-        case [
-            all [d >= #"0" d <= #"9"][
-                ret: ret * 16 + (to integer! d) - 48 ; 48 = to integer! #"0"
-            ]
-            all [d >= #"A" d <= #"F"][
-                ret: ret * 16 + (to integer! d) - 65 + 10; 65 = to integer! #"A"
-            ]
-            'else [
-                fail spaced ["Invalid hex digit:" d]
-            ]
-        ]
-    ]
-    ret
-]
-
 syntax-errors: [
     invalid-integer             "Invalid integer"
     invalid-time                "Invalid time"
@@ -434,7 +413,7 @@ string: context [
                 change {^^^^} {^^}
                 | change ["^^" open-paren
                     [
-                        copy s [ 4 digit | 2 hex-digit] and ")" (c: to char! read-hex s) ;and ")" is to prevent it matches the "ba" in "back"
+                        copy s [ 4 digit | 2 hex-digit] and ")" (c: to char! debase/base to binary! s 16) ;and ")" is to prevent it matches the "ba" in "back"
                         | copy s [some letter] (c: select named-escapes s if blank? c [abort 'unrecognized-named-escape])
                     ]
                     required-close-paren] c
@@ -710,7 +689,7 @@ url: context [
             ; replace all %xx
             parse val [
                 while [
-                    change [#"%" copy s [2 hex-digit] (c: to char! read-hex s)] c
+                    change [#"%" copy s [2 hex-digit] (c: to char! debase/base to binary! s 16)] c
                     | skip
                 ]
             ]
