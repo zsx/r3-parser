@@ -12,6 +12,7 @@ pos: _
 line-no: 1
 last-line: _
 open-at: 0x0
+binary-source?: false
 
 syntax-errors: [
     invalid-integer             "Invalid integer"
@@ -24,6 +25,7 @@ syntax-errors: [
     invalid-hex-digit           "Invalid hex digit"
     invalid-lit-word-path       "Invalid lit word or path"
     invalid-get-word-path       "Invalid get word or path"
+    invalid-utf8-char           "Invalid utf8 char"
     odd-binary-digit            "Dangling digit at the end" ;must be in pair
     missing-close-paren         "Missing a close parenthesis ')'"
     missing-close-brace         "Missing a close brace '}'"
@@ -52,7 +54,7 @@ abort: func [
 
 digit: charset "0123456789"
 hex-digit: charset "0123456789ABCDEF"
-letter: charset [#"a" - #"z"]
+letter: charset [#"a" - #"z" #"A" - #"Z"]
 sign: charset "+-"
 byte: complement charset {}
 lit-prefix: {'}
@@ -67,6 +69,58 @@ special-char: charset "@%\:'<>+-~|_.,#$"
 
 non-quote: complement charset "^""
 non-close-brace: complement charset "^}"
+
+A: charset "Aa"
+B: charset "Bb"
+C: charset "Cc"
+D: charset "Dd"
+E: charset "Ee"
+F: charset "Ff"
+G: charset "Gg"
+H: charset "Hh"
+I: charset "Ii"
+J: charset "Jj"
+K: charset "Kk"
+L: charset "Ll"
+M: charset "Mm"
+N: charset "Nn"
+O: charset "Oo"
+P: charset "Pp"
+Q: charset "Qq"
+R: charset "Rr"
+S: charset "Ss"
+T: charset "Tt"
+U: charset "Uu"
+V: charset "Vv"
+W: charset "Ww"
+X: charset "Xx"
+Y: charset "Yy"
+Z: charset "Zz"
+
+utf8-single-byte: charset [
+    #"^(00)" - #"^(7F)" ;0xxxxxxx
+]
+utf8-first-in-2: charset [
+    #"^(C0)" - #"^(DF)" ;110xxxxx
+]
+utf8-first-in-3: charset [
+    #"^(E0)" - #"^(EF)" ;1110xxxx
+]
+utf8-first-in-4: charset [
+    #"^(F0)" - #"^(F7)" ;11110xxx
+]
+utf8-non-first-byte: charset [
+    #"^(80)" - #"^(BF)" ;10xxxxxx
+]
+utf8-char: [
+    utf8-single-byte
+    | [utf8-first-in-2 2 utf8-non-first-byte]
+    | [utf8-first-in-3 3 utf8-non-first-byte]
+    | [utf8-first-in-4 4 utf8-non-first-byte]
+]
+
+skip-char: _
+skip-char-or-abort: _
 
 line-break: [
     "^(0A)^(0D)"
@@ -93,11 +147,12 @@ locate: function [
     line-no: 1
     last-line: ser
 
+    ;overwrite skip-char so that it doesn't "abort"
     end-of-line: tail ser
     parse ser [
         any [
             end-of-line: line-break break
-            | skip
+            | skip-char
         ]
     ]
     last-line: h: copy/part head ser (-1 + index-of end-of-line)
@@ -106,7 +161,7 @@ locate: function [
     parse h [
         any [
             line-break last-line: (++ line-no)
-            | skip
+            | skip-char
         ]
     ]
 
@@ -159,7 +214,7 @@ unsigned-integer: context [
         copy s [
             some [digit | #"'"] ;allow leading zeros
         ]
-        (if error? err: try [val: to integer! s][
+        (if error? err: try [val: to integer! to string! s][
             ;FIXME: examine the error for better error message
             abort 'invalid-integer pos
         ])
@@ -176,7 +231,7 @@ integer: context [
             opt sign
             unsigned-integer/rule
         ]
-        (if error? err: try [val: to integer! s][
+        (if error? err: try [val: to integer! to string! s][
             ;FIXME: examine the error for better error message
             abort 'invalid-integer pos
         ])
@@ -190,7 +245,7 @@ unsigned-decimal: context [
     ]
 
     exponential: [
-        #"E" integer/rule
+        E integer/rule
     ]
 
     rule: [
@@ -213,7 +268,7 @@ decimal: context [
             opt sign
             unsigned-decimal/rule
         ]
-        (val: to decimal! s)
+        (val: to decimal! to string! s)
     ]
 ]
 
@@ -243,7 +298,7 @@ money: context [
         #"$"
         copy s unsigned-decimal/rule
         (
-            val: to money! to decimal! either blank? sign [s][join-of sign-char s]
+            val: to money! to decimal! to string! either blank? sign [s][join-of sign-char s]
         )
     ]
 ]
@@ -254,7 +309,6 @@ time: context [
     hour: 0
     minute: 0
     sec: 0.0
-    t: _
     intra-day: false
 
     init: does [
@@ -275,8 +329,8 @@ time: context [
             #":" any-number/rule (sec: any-number/val)
             opt [
                 [
-                     "AM"
-                     | "PM" (hour: hour + 12)
+                    [A M]
+                    | [P M] (hour: hour + 12)
                 ]
                 (intra-day: true)
             ]
@@ -292,14 +346,14 @@ time: context [
 
 pair: context [
     val: 0x0
-    x: _
+    x0: _
 
     rule: [
         [
-            any-number/rule (x: any-number/val)
-            #"x"
+            any-number/rule (x0: any-number/val)
+            X
             any-number/rule
-            (val: to pair! reduce [x any-number/val])
+            (val: to pair! reduce [x0 any-number/val])
         ]
     ]
 ]
@@ -310,7 +364,7 @@ date: context [
     month: _
     year: _
     tz: _
-    t: _
+    tm: _
     sep: _
     sign-char: _
 
@@ -318,30 +372,30 @@ date: context [
         day: _
         month: _
         year: _
-        t: _
+        tm: _
         tz: _
     ]
 
     named-month: [
-        "Jan" opt [#"u" opt [#"a" opt [ #"r" opt #"y"]]]                            (month: 1)
-        | "Feb" opt [#"r" opt [#"u" opt [#"a" opt [ #"r" opt #"y"]]]]               (month: 2)
-        | "Mar" opt [#"c" opt opt #"h"]                                             (month: 3)
-        | "Apr" opt [#"i" opt opt #"l"]                                             (month: 4)
-        | "May"                                                                     (month: 5)
-        | "Jun" opt #"e"                                                            (month: 6)
-        | "Jul" opt #"y"                                                            (month: 7)
-        | "Aug" opt [#"u" opt [#"s" opt #"t"]]                                      (month: 8)
-        | "Sep" opt [#"t" opt [#"e" opt [ #"m" opt [#"b" opt [#"e" opt #"r"]]]]]    (month: 9)
-        | "Oct" opt [#"o" opt [#"b" opt [#"e" opt #"r"]]]                           (month: 10)
-        | "Nov" opt [#"e" opt [ #"m" opt [#"b" opt [#"e" opt #"r"]]]]               (month: 11)
-        | "Dec" opt [#"e" opt [ #"m" opt [#"b" opt [#"e" opt #"r"]]]]               (month: 12)
+          J A N opt [U opt [A opt [R opt Y]]]                       (month: 1)
+        | F E B opt [R opt [U opt [A opt [ R opt Y]]]]              (month: 2)
+        | M A R opt [C opt opt H]                                   (month: 3)
+        | A P R opt [I opt opt L]                                   (month: 4)
+        | M A Y                                                     (month: 5)
+        | J U N opt E                                               (month: 6)
+        | J U L opt Y                                               (month: 7)
+        | A U G opt [U opt [S opt T]]                               (month: 8)
+        | S E P opt [T opt [E opt [ M opt [B opt [E opt R]]]]]      (month: 9)
+        | O C T opt [O opt [B opt [E opt R]]]                       (month: 10)
+        | N O V opt [E opt [ M opt [B opt [E opt R]]]]              (month: 11)
+        | D E C opt [E opt [ M opt [B opt [E opt R]]]]              (month: 12)
     ]
 
     rule: [
         (init)
         [
             unsigned-integer/rule (day: unsigned-integer/val)
-            set sep [#"-" | #"/"]
+            set sep [#"-" | #"/"] (sep: to char! sep) ;without converting to char!, sep would be an integer if source is binary!!
             [
                 unsigned-integer/rule (month: unsigned-integer/val)
                 | named-month
@@ -350,9 +404,9 @@ date: context [
             unsigned-integer/rule (year: unsigned-integer/val)
             opt [
                 #"/"
-                time/rule (t: time/val)
+                time/rule (tm: time/val)
                 opt [
-                    set sign-char sign
+                    set sign-char sign (sign-char: to char! sign-char)
                     time/rule (
                         either sign-char = #"-" [
                             tz: negate time/val
@@ -364,7 +418,7 @@ date: context [
             ]
             (
                 val: reduce [day month year]
-                if t [append val t]
+                if tm [append val tm]
                 if tz [append val tz]
                 val: make date! val
             )
@@ -428,7 +482,7 @@ string: context [
     ]
 
     unescape: func [
-        src [string!] "modified"
+        src [string! binary!] "modified"
     ][
         parse src [
             while [
@@ -436,11 +490,12 @@ string: context [
                 | change ["^^" open-paren pos:
                     [
                         copy s [ 4 digit | 2 hex-digit] and ")" (c: to char! debase/base to binary! s 16) ;and ")" is to prevent it matches the "ba" in "back"
-                        | copy s [some letter] (c: select named-escapes s if blank? c [abort 'unrecognized-named-escape pos])
+                        | copy s [some letter] (c: select named-escapes lowercase to string! s if blank? c [abort 'unrecognized-named-escape pos])
                     ]
                     required-close-paren] c
-                | change ["^^" set b byte (c: any [select escapes b b])] c
-                | skip
+                | change ["^^" set b utf8-char (b: to char! b c: any [select escapes (lowercase b) b])] c
+                | end break
+                | skip-char-or-abort
             ]
         ]
         src
@@ -483,6 +538,7 @@ string: context [
             ;print ["unescapped string:" mold val]
             ;trace on
             unescape val
+            val: to string! val
             ;trace off
             ;print ["escapped string:" mold val]
         )
@@ -590,7 +646,7 @@ issue: context [
                 issue-char
                 | regular-word-char
                 | digit
-            ] (val: to issue! val)
+            ] (val: to issue! to string! val)
             | pos: (abort 'invalid-issue pos)
         ]
     ]
@@ -705,14 +761,15 @@ url: context [
                 [#"%" 2 hex-digit]
                 | #"/"
                 | and delimiter break
-                | skip
+                | skip-char-or-abort
             ]
         ] (
             ; replace all %xx
             parse val [
                 while [
                     change [#"%" copy s [2 hex-digit] (c: to char! debase/base to binary! s 16)] c
-                    | skip
+                    | end break
+                    | skip-char-or-abort
                 ]
             ]
 
@@ -729,14 +786,14 @@ char: context [
                 "^^^^"
                 | "^^^""
                 | "^^" open-paren some letter required-close-paren ;named escape
-                | "^^" skip ;escape
+                | "^^" skip-char-or-abort ;escape
                 | non-quote
             ] #"^""
             | #"^{" copy val pos: [
                 "^^^^"
                 | "^^^""
                 | "^^" open-paren some letter required-close-paren ;named escape
-                | "^^" skip ;escape
+                | "^^" skip-char-or-abort ;escape
                 | non-close-brace
             ] #"^}"
         ] (
@@ -796,7 +853,7 @@ byte-integer: context [
                 | #"5" five-or-less
             ]
             | digit opt digit
-        ] (val: to integer! val)
+        ] (val: to integer! to string! val)
     ]
 ]
 
@@ -828,7 +885,7 @@ email: context [
             leading-email-char
             any non-at
             #"@"
-            any [delimiter break | skip] ; "to delimiter" causes invalid-rule error ???
+            any [delimiter break | skip-char-or-abort] ; "to delimiter" causes invalid-rule error ???
         ] (val: to email! val)
     ]
 ]
@@ -846,7 +903,8 @@ comment: context [
         copy val [
             #";" any [
                 line-break break
-                | skip
+                | end
+                | skip-char-or-abort
             ]
         ] ;(print ["comment found:" mold val])
     ]
@@ -989,10 +1047,18 @@ rebol: context [
     ]
 ]
 
-scan-source: function [
+scan-source: func [
     source [binary! string!]
 ][
-;    debug ["scanning:" mold source]
+    ;debug ["scanning:" mold source]
+    binary-source?: binary? source
+    either binary-source? [
+        skip-char: [utf8-char]
+        skip-char-or-abort: [utf8-char | pos: (abort 'invalid-utf8-char pos)]
+    ][
+        skip-char: skip-char-or-abort: [skip]
+    ]
+
     pre-parse source
 
     ;trace on
