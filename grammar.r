@@ -37,11 +37,15 @@ syntax-errors: [
 abort: func [
     reason [word!]
     pos [binary! string!]
+    <local>
+    loc
 ][
     ;trace off
-    print ["Aborting due to" reason "at:" locate pos]
-    print ["Last open-at:" mold open-at]
-    print ["source:" to string! pos]
+    print ["Aborting due to" reason "at:" second loc: locate pos]
+    print ["line:"]
+    print to string! loc/1
+    ;print ["Last open-at:" mold open-at]
+    ;print ["source:" to string! pos]
     err: reason
     fail (select* syntax-errors reason else spaced ["Unknown error" reason])
 ]
@@ -85,16 +89,30 @@ delimiter: [
 locate: function [
     ser [binary! string!]
 ][
-    if empty? ser [return 0x0]
+    if empty? h: head ser [return 0x0]
     line-no: 1
     last-line: ser
+
+    end-of-line: tail ser
     parse ser [
-        line-break last-line: (++ line-no)
-        | skip
+        any [
+            end-of-line: line-break break
+            | skip
+        ]
     ]
+    last-line: h: copy/part head ser (-1 + index-of end-of-line)
+    assert [not find? "^/^M" last h]
+
+    parse h [
+        any [
+            line-break last-line: (++ line-no)
+            | skip
+        ]
+    ]
+
     col-no: 1 + (index-of pos) - (index-of last-line)
 
-    to pair! reduce [line-no col-no]
+    reduce [last-line to pair! reduce [line-no col-no]]
 ]
 
 open-brace: [
