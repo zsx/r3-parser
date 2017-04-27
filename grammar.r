@@ -492,22 +492,29 @@ binary: context [
     val: _
     h1: _
     h2: _
+    s: _
+    base64-char: charset [
+        #"A" - #"Z"
+        #"a" - #"z"
+        #"0" - #"9"
+        "+-="
+    ]
+    base2-char: charset "01"
     rule: [
         "#" open-brace (val: make binary! 1)
-            any [
-                and #"}" break
-                | space
-                | [
-                    [set h1 hex-digit | pos: (abort 'invalid-hex-digit)]
-                    opt space
-                    pos:
-                    [
-                        set h2 hex-digit
-                        | #"^}" (abort 'odd-binary-digit)
-                        | (abort 'invalid-hex-digit)
-                    ]
-                ] (append val read-hex ajoin [h1 h2])
-            ]
+            copy val [
+                some [hex-digit | space]
+            ] (val: debase/base to binary! val 16)
+        required-close-brace
+        | "2#" open-brace (s: make string! 1)
+            copy val [
+                some [base2-char | space]
+            ] (val: debase/base to binary! val 2)
+        required-close-brace
+        | "64#" open-brace
+            copy val [
+                some [base64-char | space]
+            ] (val: debase to binary! val)
         required-close-brace
     ]
 ]

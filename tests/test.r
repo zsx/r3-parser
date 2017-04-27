@@ -58,6 +58,7 @@ for-each f [
     %email.r
     %tuple.r
     %issue.r
+    %binary.r
 ][
     for-each s load/all f [
         assert-scan f s
