@@ -53,7 +53,7 @@ abort: func [
 ]
 
 digit: charset "0123456789"
-hex-digit: charset "0123456789ABCDEF"
+hex-digit: charset "0123456789ABCDEFabcdef"
 letter: charset [#"a" - #"z" #"A" - #"Z"]
 sign: charset "+-"
 byte: complement charset {}
@@ -489,7 +489,7 @@ string: context [
                 change {^^^^} {^^}
                 | change ["^^" open-paren pos:
                     [
-                        copy s [ 4 digit | 2 hex-digit] and ")" (c: to char! debase/base to binary! s 16) ;and ")" is to prevent it from matching "ba" in "back"
+                        copy s [ 4 digit | 2 hex-digit] and ")" (c: debase/base to binary! s 16) ;and ")" is to prevent it from matching "ba" in "back"
                         | copy s [some letter] (c: select named-escapes lowercase to string! s if blank? c [abort 'unrecognized-named-escape pos])
                     ]
                     required-close-paren] c
@@ -767,7 +767,7 @@ url: context [
             ; replace all %xx
             parse val [
                 while [
-                    change [#"%" copy s [2 hex-digit] (c: to char! debase/base to binary! s 16)] c
+                    change [#"%" copy s [2 hex-digit] (c: debase/base to binary! s 16)] c
                     | end break
                     | skip-char-or-abort
                 ]
@@ -785,24 +785,29 @@ char: context [
             #"^"" copy val pos: [
                 "^^^^"
                 | "^^^""
-                | "^^" open-paren some letter required-close-paren ;named escape
+                | "^^" open-paren some [letter | digit] required-close-paren ;named escape
                 | "^^" skip-char-or-abort ;escape
                 | non-quote
             ] #"^""
             | #"^{" copy val pos: [
                 "^^^^"
                 | "^^^""
-                | "^^" open-paren some letter required-close-paren ;named escape
+                | "^^" open-paren some [letter | digit] required-close-paren ;named escape
                 | "^^" skip-char-or-abort ;escape
                 | non-close-brace
             ] #"^}"
         ] (
             string/unescape val
-            unless 1 = length val [
-                ;print ["length of string is not 1" mold string/val]
-                abort 'invalid-char pos
+            either string? val [
+                unless 1 = length val [
+                    ;print ["length of string is not 1" mold val]
+                    abort 'invalid-char pos
+                ]
+                val: first val
+            ][; binary!
+                ;dump val
+                val: to char! to-integer/unsigned val
             ]
-            val: first val
         )
     ]
 ]
