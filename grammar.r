@@ -179,7 +179,8 @@ find-line: function [
     start: to integer! first pick new-lines pos/x
 
     either pos/x < length new-lines [
-        end-of-line: new-lines/(pos/x + 1)/x
+        next-line: pick new-lines (pos/x + 1)
+        end-of-line: to integer! next-line/x - next-line/y
     ][
         cur: ser
         while [not tail? cur][
@@ -817,7 +818,12 @@ url: context [
             ; replace all %xx
             parse val [
                 while [
-                    change [#"%" copy s [2 hex-digit] (c: debase/base to binary! s 16)] c
+                    change [#"%" copy s [2 hex-digit] (
+                            c: debase/base to binary! s 16
+                            unless binary-source? [
+                                c: to char! to integer! c
+                            ]
+                        )] c
                     | end break
                     | skip-char-or-abort
                 ]
