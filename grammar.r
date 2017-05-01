@@ -36,16 +36,27 @@ syntax-errors: [
     syntax-error                "Syntax error"
 ]
 
-abort: func [
+abort: function [
     reason [word!]
     pos [binary! string!]
-    <local>
-    loc
+    <with> err
 ][
     ;trace off
-    print ["Aborting due to" reason "at:" second loc: locate pos]
-    print ["line:"]
-    print to string! loc/1
+    print ["Aborting due to" reason "at:" loc: locate pos]
+    print line: to string! find-line pos loc
+    pointer: make string! to integer! loc/2
+    for i 1 (loc/2 - 1) 1 [
+        append pointer either #"^-" = pick line i [
+            #"^-"
+        ][
+            #" "
+        ]
+    ]
+
+    append pointer "^^"
+    assert [loc/2 = length pointer]
+
+    print pointer
     ;print ["Last open-at:" mold open-at]
     ;print ["source:" to string! pos]
     err: reason
@@ -122,10 +133,26 @@ utf8-char: [
 skip-char: _
 skip-char-or-abort: _
 
+; newlines will have some pairs,
+; each pair represents a start of a new line, with x being the index in the
+; source, and y being the length of the last line break (1 for CR or LF, and 2
+; for CRLF)
+new-lines: make block! 128
+add-new-line: procedure [
+    src
+    len [integer!]
+        {Length of line-break (1 or 2)}
+][
+    idx: index-of src
+    if idx > first (last new-lines) [
+        append new-lines to pair! reduce [idx len]
+    ]
+]
+
 line-break: [
-    "^(0A)^(0D)"
-    | #"^(0A)"
-    | #"^(0D)"
+    "^(0A)^(0D)" pos: (add-new-line pos 2)
+    | #"^(0A)" pos: (add-new-line pos 1)
+    | #"^(0D)" pos: (add-new-line pos 1)
 ]
 
 space: [
@@ -140,34 +167,55 @@ delimiter: [
     | end
 ]
 
+find-line: function [
+    {Find the line @ser is in}
+    ser [binary! string!]
+    pos [blank! pair!]
+][
+    if blank? pos [
+        pos: locate ser
+    ]
+
+    start: to integer! first pick new-lines pos/x
+
+    either pos/x < length new-lines [
+        end-of-line: new-lines/(pos/x + 1)/x
+    ][
+        cur: ser
+        while [not tail? cur][
+            if find? "^(0A)^(0D)" to char! to integer! cur/1 [
+                break
+            ]
+            cur: next cur
+        ]
+        end-of-line: index-of cur
+    ]
+
+    copy/part skip (head ser) (start - 1) (end-of-line - start)
+]
+
 locate: function [
+    {Find out the location of the series, returning a pair: line x col}
     ser [binary! string!]
 ][
-    if empty? h: head ser [return 0x0]
-    line-no: 1
-    last-line: ser
-
-    ;overwrite skip-char so that it doesn't "abort"
-    end-of-line: tail ser
-    parse ser [
-        any [
-            end-of-line: line-break break
-            | skip-char
-        ]
-    ]
-    last-line: h: copy/part head ser (-1 + index-of end-of-line)
-    assert [not find? "^/^M" last h]
-
-    parse h [
-        any [
-            line-break last-line: (++ line-no)
-            | skip-char
+    ;trace off
+    ;return reduce [{} 0x0]
+    lines: back tail new-lines
+    idx: index-of ser
+    start: head lines
+    for-skip lines -1 [
+        ;print ["Looking at lines:" first lines]
+        if lines/1/x <= idx [
+            ;print ["Found start at:" start]
+            start: lines
+            break
         ]
     ]
 
-    col-no: 1 + (index-of pos) - (index-of last-line)
-
-    reduce [last-line to pair! reduce [line-no col-no]]
+    to pair! reduce [
+        index-of start
+        1 + (index-of ser) - start/1/x
+    ]
 ]
 
 open-brace: [
@@ -538,7 +586,9 @@ string: context [
             ;print ["unescapped string:" mold val]
             ;trace on
             unescape val
-            val: to string! val
+            if binary? val [
+                val: decode 'text val ;to-string would convert #{0D} to "^(0A)"!!!
+            ]
             ;trace off
             ;print ["escapped string:" mold val]
         )
@@ -923,6 +973,10 @@ pre-parse: func [
     last-line: source
     line-no: 1
     err: _
+
+    clear new-lines
+    append new-lines [1x0]
+
 ]
 
 path: context [
