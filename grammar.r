@@ -1,7 +1,9 @@
 REBOL [
-   Title: "Rebol 3 parser"
-   Type: 'module
-   Exports: [scan-source]
+    Title: "Rebol 3 parser"
+    Author: "Shixin Zeng<szeng@atronixengineering.com>"
+	Rights: "Copyright (C) Atronix Engineering, Inc. 2017"
+    Type: 'module
+    Exports: [scan-source]
 ]
 
 
@@ -716,8 +718,6 @@ refinement: context [
         ]
     ]
 ]
-
-
 
 get-path: context [
     val: _
